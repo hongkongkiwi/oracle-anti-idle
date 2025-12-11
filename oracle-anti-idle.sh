@@ -776,7 +776,8 @@ customize() {
     echo -e "  CPU: ${new_cpu}%"
     echo -e "  Memory: ${new_mem}%"
     
-    read -p "\nApply these settings? (y/n): " confirm
+    echo ""
+    read -p "Apply these settings? (y/n): " confirm
     
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
         create_config "$new_cpu" "$new_mem"
@@ -807,7 +808,8 @@ quick_setup() {
     echo -e "  • Auto-restart on failure"
     echo -e "  • Auto-start on boot"
     
-    read -p "\nProceed with setup? (y/n): " confirm
+    echo ""
+    read -p "Proceed with setup? (y/n): " confirm
     
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
         echo -e "\n${CYAN}Setting up anti-idle protection...${NC}\n"
