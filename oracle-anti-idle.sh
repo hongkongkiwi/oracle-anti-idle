@@ -516,17 +516,23 @@ EOF
     
     # Reload supervisor configuration
     echo -e "Applying configuration..."
-    
-    if supervisorctl reread 2>&1 | grep -v "ERROR"; then
+
+    local reread_output
+    reread_output=$(supervisorctl reread 2>&1)
+    if [[ $? -eq 0 ]] && ! echo "$reread_output" | grep -qi "error"; then
         echo -e "  ${GREEN}✓${NC} Configuration loaded"
     else
         echo -e "  ${YELLOW}⚠${NC} Configuration reload had issues"
+        [[ -n "$reread_output" ]] && log "supervisorctl reread: $reread_output"
     fi
-    
-    if supervisorctl update 2>&1 | grep -v "ERROR"; then
+
+    local update_output
+    update_output=$(supervisorctl update 2>&1)
+    if [[ $? -eq 0 ]] && ! echo "$update_output" | grep -qi "error"; then
         echo -e "  ${GREEN}✓${NC} Configuration applied"
     else
         echo -e "  ${YELLOW}⚠${NC} Configuration update had issues"
+        [[ -n "$update_output" ]] && log "supervisorctl update: $update_output"
     fi
     
     save_state "false" "$cpu_percent" "$mem_percent"
@@ -968,10 +974,15 @@ auto_update_check() {
             
             # Only show update notice if remote version is actually newer
             if [[ -n "$latest_version" ]] && version_compare "$latest_version" "$SCRIPT_VERSION"; then
-                echo -e "\n${YELLOW}╔══════════════════════════════════════════╗${NC}"
-                echo -e "${YELLOW}║  📦 Update Available: v${latest_version}          ║${NC}"
-                echo -e "${YELLOW}║  Run option 6 to update                  ║${NC}"
-                echo -e "${YELLOW}╚══════════════════════════════════════════╝${NC}\n"
+                local msg="Update Available: v${latest_version}"
+                local box_width=$((${#msg} + 6))
+                local border=$(printf '═%.0s' $(seq 1 $box_width))
+                local padding=$((box_width - ${#msg} - 4))
+                local spaces=$(printf ' %.0s' $(seq 1 $padding))
+                echo -e "\n${YELLOW}╔${border}╗${NC}"
+                echo -e "${YELLOW}║  📦 ${msg}${spaces}║${NC}"
+                echo -e "${YELLOW}║  Run option 6 to update$(printf ' %.0s' $(seq 1 $((box_width - 25))))║${NC}"
+                echo -e "${YELLOW}╚${border}╝${NC}\n"
                 sleep 2
             fi
             
