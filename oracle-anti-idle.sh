@@ -609,15 +609,65 @@ disable_antidle() {
     log "Anti-idle disabled"
 }
 
-# Toggle anti-idle
-toggle_antidle() {
+# Anti-idle control menu
+antidle_menu() {
     local current=$(load_state)
-    
+
+    echo -e "\n${CYAN}══════════════════════════════════════════${NC}"
+    echo -e "${WHITE}       ANTI-IDLE CONTROL${NC}"
+    echo -e "${CYAN}══════════════════════════════════════════${NC}\n"
+
+    # Show current status
     if [[ "$current" == "true" ]]; then
-        disable_antidle
+        echo -e "Current Status: ${GREEN}● ENABLED${NC}"
+        # Check if processes are actually running
+        if pgrep -f "stress-ng" > /dev/null 2>&1; then
+            echo -e "Stress Processes: ${GREEN}● Running${NC}"
+        else
+            echo -e "Stress Processes: ${YELLOW}● Not Running${NC}"
+        fi
     else
-        enable_antidle
+        echo -e "Current Status: ${RED}● DISABLED${NC}"
     fi
+
+    echo -e "\nConfiguration: $(get_config)"
+    echo -e "\n${WHITE}Options:${NC}"
+    echo -e "  ${WHITE}1)${NC} Enable Anti-Idle"
+    echo -e "  ${WHITE}2)${NC} Disable Anti-Idle"
+    echo -e "  ${WHITE}0)${NC} Back to Main Menu\n"
+
+    read -p "Select option [0-2]: " choice
+
+    case $choice in
+        1)
+            if [[ "$current" == "true" ]]; then
+                echo -e "\n${YELLOW}Anti-idle is already enabled.${NC}"
+                read -p "Restart services? (y/n): " restart
+                if [[ "$restart" =~ ^[Yy]$ ]]; then
+                    disable_antidle
+                    sleep 1
+                    enable_antidle
+                fi
+            else
+                enable_antidle
+            fi
+            ;;
+        2)
+            if [[ "$current" == "true" ]]; then
+                disable_antidle
+            else
+                echo -e "\n${YELLOW}Anti-idle is already disabled.${NC}"
+            fi
+            ;;
+        0|"")
+            return
+            ;;
+        *)
+            echo -e "${RED}Invalid option${NC}"
+            ;;
+    esac
+
+    sleep 2
 }
 
 # Show detailed status
@@ -1007,7 +1057,7 @@ main_menu() {
         fi
         
         echo -e "${CYAN}══════════════ MAIN MENU ═════════════════${NC}\n"
-        echo -e "  ${WHITE}1)${NC} Enable/Disable Anti-Idle"
+        echo -e "  ${WHITE}1)${NC} Anti-Idle Control"
         echo -e "  ${WHITE}2)${NC} Show Detailed Status"
         echo -e "  ${WHITE}3)${NC} Customize Settings"
         echo -e "  ${WHITE}4)${NC} Quick Setup (Recommended)"
@@ -1018,7 +1068,7 @@ main_menu() {
         read -p "Select option [0-6]: " choice
         
         case $choice in
-            1) toggle_antidle; sleep 2 ;;
+            1) antidle_menu ;;
             2) show_status; read -p "Press Enter to continue..." ;;
             3) customize ;;
             4) quick_setup ;;
