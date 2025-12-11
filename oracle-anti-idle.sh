@@ -470,7 +470,8 @@ create_config() {
 ; CPU: ${cpu_percent}% | Memory: ${mem_percent}%
 
 [program:oracle_anti_idle_cpu]
-command=/usr/bin/stress-ng --cpu ${CPU_COUNT} --cpu-load ${cpu_percent} --timeout 0
+; Run with nice 19 (lowest priority) so real workloads take precedence
+command=/usr/bin/nice -n 19 /usr/bin/stress-ng --cpu ${CPU_COUNT} --cpu-load ${cpu_percent} --timeout 0
 autostart=true
 autorestart=true
 startretries=999999
@@ -485,7 +486,8 @@ user=root
 priority=100
 
 [program:oracle_anti_idle_memory]
-command=/usr/bin/stress-ng --vm 1 --vm-bytes ${mem_percent}%% --vm-hang 0 --timeout 0
+; Run with nice 19 and ionice idle class so real workloads take precedence
+command=/usr/bin/nice -n 19 /usr/bin/ionice -c 3 /usr/bin/stress-ng --vm 1 --vm-bytes ${mem_percent}%% --vm-hang 0 --timeout 0
 autostart=true
 autorestart=true
 startretries=999999
