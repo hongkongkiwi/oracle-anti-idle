@@ -13,13 +13,17 @@ Never let your Oracle Cloud Free Tier instance get terminated due to inactivity!
 - **Backup & Restore** - Configuration backup management
 - **Systemd Integration** - Monitoring service for ultimate reliability
 - **Beautiful CLI** - Modern menu-driven interface with ASCII art
-- **Ubuntu Optimized** - Designed specifically for Ubuntu/Debian systems
+- **Multi-OS Support** - Works on Ubuntu/Debian, Oracle Linux, RHEL, and CentOS
 
 ## 📋 Requirements
 
-- Ubuntu/Debian-based system (tested on Ubuntu 20.04/22.04)
+- **Supported Operating Systems:**
+  - Ubuntu/Debian (tested on Ubuntu 20.04/22.04)
+  - Oracle Linux 7, 8, 9
+  - RHEL/CentOS 7, 8, 9
 - Root/sudo privileges
-- Oracle Cloud Free Tier instance (or any Ubuntu VPS)
+- systemd (init systems like SysVinit are not supported)
+- Oracle Cloud Free Tier instance (or any compatible VPS)
 
 ## ⚡ Quick Start
 
@@ -141,8 +145,14 @@ cat /etc/os-release
 ### Supervisor not found
 ```bash
 # The script auto-installs dependencies, but if needed:
+
+# Ubuntu/Debian:
 sudo apt-get update
 sudo apt-get install supervisor stress-ng
+
+# Oracle Linux/RHEL/CentOS (requires EPEL):
+sudo dnf install epel-release
+sudo dnf install supervisor stress-ng
 ```
 
 ### High resource usage
@@ -179,7 +189,23 @@ If you find this project helpful, please give it a star ⭐
 
 ## 📝 Changelog
 
-### v5.0.0 (Latest)
+### v8.0.0 (Latest)
+- Added Oracle Linux 7/8/9 support
+- Added RHEL/CentOS 7/8/9 support
+- OS-agnostic package management (apt/dnf/yum)
+- Automatic EPEL repository configuration for RHEL-based systems
+- systemd availability check with helpful error messages
+- Correct supervisor paths per OS family
+
+### v7.0.0
+- Auto-update functionality
+- Version checking from GitHub
+
+### v6.0.0
+- Ultra-reliable simplified version
+- Streamlined codebase
+
+### v5.0.0
 - Enhanced reliability with systemd monitoring
 - Health monitoring system
 - Backup and restore functionality
