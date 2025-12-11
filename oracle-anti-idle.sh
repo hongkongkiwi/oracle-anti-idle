@@ -181,7 +181,12 @@ install_package() {
     if [[ "$OS_TYPE" == "debian" ]]; then
         DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" > /dev/null 2>&1
     else
-        dnf install -y "$pkg" > /dev/null 2>&1 || yum install -y "$pkg" > /dev/null 2>&1
+        # Try dnf first, fall back to yum
+        if command -v dnf &>/dev/null; then
+            dnf install -y "$pkg" > /dev/null 2>&1
+        else
+            yum install -y "$pkg" > /dev/null 2>&1
+        fi
     fi
 }
 
@@ -190,8 +195,15 @@ update_package_lists() {
     if [[ "$OS_TYPE" == "debian" ]]; then
         apt-get update 2>&1 | grep -E "^(Get:|Hit:|Ign:)" > /dev/null
     else
-        # For RHEL/Oracle Linux, dnf/yum automatically refreshes metadata
-        dnf makecache > /dev/null 2>&1 || yum makecache > /dev/null 2>&1
+        # For RHEL/Oracle Linux, refresh metadata
+        # Use --refresh to force metadata update, ignore exit codes as dnf can return non-zero even on success
+        if command -v dnf &>/dev/null; then
+            dnf makecache --refresh > /dev/null 2>&1 || true
+        else
+            yum makecache > /dev/null 2>&1 || true
+        fi
+        # Always return success for RHEL - packages will fail later if repos aren't working
+        return 0
     fi
 }
 
