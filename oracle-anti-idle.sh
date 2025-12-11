@@ -233,54 +233,43 @@ install_dependencies() {
 
     # On RHEL/Oracle Linux, packages like stress-ng and supervisor need EPEL
     if [[ "$OS_TYPE" == "rhel" ]]; then
-        echo -e "  ${CYAN}Configuring EPEL repository for additional packages...${NC}"
-
-        # Detect OS version
-        local os_version=""
-        if [[ -f /etc/os-release ]]; then
-            os_version=$(grep "^VERSION_ID=" /etc/os-release | cut -d'"' -f2 | cut -d'.' -f1)
-        fi
-
-        if [[ -f /etc/oracle-release ]]; then
-            # Oracle Linux - use Oracle's EPEL repos
-            echo -e "  ${CYAN}Detected Oracle Linux ${os_version}, enabling Oracle EPEL...${NC}"
-
-            # Install yum-utils if not present (needed for yum-config-manager)
-            if ! command -v yum-config-manager &>/dev/null; then
-                dnf install -y yum-utils > /dev/null 2>&1 || yum install -y yum-utils > /dev/null 2>&1 || true
+        # Check if EPEL is already configured (epel-release or oracle-epel-release installed)
+        if rpm -q epel-release > /dev/null 2>&1 || rpm -q oracle-epel-release-el9 > /dev/null 2>&1 || rpm -q oracle-epel-release-el8 > /dev/null 2>&1; then
+            echo -e "  ${GREEN}✓${NC} EPEL repository already configured"
+        else
+            # Detect OS version
+            local os_version=""
+            if [[ -f /etc/os-release ]]; then
+                os_version=$(grep "^VERSION_ID=" /etc/os-release | cut -d'"' -f2 | cut -d'.' -f1)
             fi
 
-            # Try to install Oracle EPEL release package
-            if [[ "$os_version" == "9" ]]; then
-                dnf install -y oracle-epel-release-el9 > /dev/null 2>&1 || true
-                dnf config-manager --enable ol9_developer_EPEL > /dev/null 2>&1 || \
-                yum-config-manager --enable ol9_developer_EPEL > /dev/null 2>&1 || true
-            elif [[ "$os_version" == "8" ]]; then
-                dnf install -y oracle-epel-release-el8 > /dev/null 2>&1 || true
-                dnf config-manager --enable ol8_developer_EPEL > /dev/null 2>&1 || \
-                yum-config-manager --enable ol8_developer_EPEL > /dev/null 2>&1 || true
+            if [[ -f /etc/oracle-release ]]; then
+                # Oracle Linux - use Oracle's EPEL repos
+                echo -ne "  Configuring Oracle Linux ${os_version} EPEL repository... "
+
+                # Try to install Oracle EPEL release package, fallback to Fedora EPEL
+                if [[ "$os_version" == "9" ]]; then
+                    dnf install -y oracle-epel-release-el9 > /dev/null 2>&1 || \
+                    dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm" > /dev/null 2>&1 || true
+                elif [[ "$os_version" == "8" ]]; then
+                    dnf install -y oracle-epel-release-el8 > /dev/null 2>&1 || \
+                    dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm" > /dev/null 2>&1 || true
+                else
+                    # OL7 or unknown
+                    yum install -y oracle-release-el7 > /dev/null 2>&1 || \
+                    yum install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm" > /dev/null 2>&1 || true
+                fi
+                echo -e "${GREEN}done${NC}"
             else
-                # OL7 or unknown - try generic approach
-                yum install -y oracle-release-el7 > /dev/null 2>&1 || true
-                yum-config-manager --enable ol7_developer_EPEL > /dev/null 2>&1 || true
-            fi
-
-            # Verify EPEL is enabled by checking if stress-ng is available
-            if ! dnf list available stress-ng > /dev/null 2>&1; then
-                echo -e "  ${YELLOW}Oracle EPEL packages not available, trying Fedora EPEL...${NC}"
+                # Standard RHEL/CentOS - use Fedora EPEL
+                echo -ne "  Configuring RHEL/CentOS ${os_version} EPEL repository... "
+                dnf install -y epel-release > /dev/null 2>&1 || \
+                yum install -y epel-release > /dev/null 2>&1 || \
                 dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${os_version}.noarch.rpm" > /dev/null 2>&1 || \
                 yum install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${os_version}.noarch.rpm" > /dev/null 2>&1 || true
+                echo -e "${GREEN}done${NC}"
             fi
-        else
-            # Standard RHEL/CentOS - use Fedora EPEL
-            echo -e "  ${CYAN}Detected RHEL/CentOS ${os_version}, enabling Fedora EPEL...${NC}"
-            dnf install -y epel-release > /dev/null 2>&1 || \
-            yum install -y epel-release > /dev/null 2>&1 || \
-            dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${os_version}.noarch.rpm" > /dev/null 2>&1 || \
-            yum install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${os_version}.noarch.rpm" > /dev/null 2>&1 || true
         fi
-
-        echo -e "  ${GREEN}✓${NC} EPEL repository configured"
     fi
 
     # Check each required package
