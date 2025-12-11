@@ -2,23 +2,29 @@
 
 # Oracle Anti-Idle System - Ultra-Reliable Edition
 # Author: Matt Blumberg
-# Version: 6.0.0
+# Version: 8.0.0
 # Description: Extremely reliable Oracle Cloud anti-idle system with automatic recovery
+# Supported OS: Ubuntu/Debian, Oracle Linux, RHEL/CentOS
 
 set -euo pipefail
 
 # Configuration
-SCRIPT_VERSION="7.0.0"
-BUILD_TIME="2025-08-20 08:00:00"
+SCRIPT_VERSION="8.0.0"
+BUILD_TIME="2025-12-11 00:00:00"
 LOG_DIR="/var/log/oracle-anti-idle"
 LOG_FILE="$LOG_DIR/oracle-anti-idle.log"
-SUPERVISOR_CONF="/etc/supervisor/conf.d/oracle-anti-idle.conf"
 STATE_FILE="/var/lib/oracle-anti-idle/state"
 LOCK_FILE="/var/run/oracle-anti-idle.lock"
 GITHUB_REPO="blumberg-git/oracle-anti-idle"
 UPDATE_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main/oracle-anti-idle.sh"
 SCRIPT_PATH="$(readlink -f "$0")"
 BACKUP_PATH="${SCRIPT_PATH}.backup"
+
+# OS-specific paths (set by detect_os)
+OS_TYPE=""
+OS_NAME=""
+SUPERVISOR_CONF=""
+SUPERVISOR_SERVICE=""
 
 # Default settings (15% as requested)
 DEFAULT_CPU_PERCENT=15
@@ -35,6 +41,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
+GRAY='\033[0;90m'
 NC='\033[0m'
 
 # Logging with automatic directory creation
@@ -81,44 +88,182 @@ check_root() {
     fi
 }
 
+# Detect OS type and set OS-specific paths
+detect_os() {
+    if [[ -f /etc/debian_version ]]; then
+        OS_TYPE="debian"
+        OS_NAME="Ubuntu/Debian"
+        SUPERVISOR_CONF="/etc/supervisor/conf.d/oracle-anti-idle.conf"
+        SUPERVISOR_SERVICE="supervisor"
+    elif [[ -f /etc/oracle-release ]] || [[ -f /etc/redhat-release ]]; then
+        OS_TYPE="rhel"
+        if [[ -f /etc/oracle-release ]]; then
+            OS_NAME="Oracle Linux"
+        else
+            OS_NAME="RHEL/CentOS"
+        fi
+        SUPERVISOR_CONF="/etc/supervisord.d/oracle-anti-idle.ini"
+        SUPERVISOR_SERVICE="supervisord"
+    else
+        OS_TYPE="unknown"
+        OS_NAME="Unknown"
+        SUPERVISOR_CONF="/etc/supervisor/conf.d/oracle-anti-idle.conf"
+        SUPERVISOR_SERVICE="supervisor"
+    fi
+}
+
 # Comprehensive system check
 check_system() {
     echo -e "Checking system compatibility...\n"
-    
-    # Check if Ubuntu/Debian
-    if [[ ! -f /etc/debian_version ]]; then
-        echo -e "${RED}Error: This script is designed for Ubuntu/Debian systems${NC}"
-        echo -e "${YELLOW}Detected: $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)${NC}"
+
+    # Detect OS
+    detect_os
+
+    # Check if supported OS
+    if [[ "$OS_TYPE" == "unknown" ]]; then
+        echo -e "${RED}Error: This script is designed for Ubuntu/Debian or Oracle Linux/RHEL systems${NC}"
+        echo -e "${YELLOW}Detected: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || echo 'Unknown OS')${NC}"
         exit 1
     fi
-    
+
+    # Check for required base commands
+    if [[ "$OS_TYPE" == "debian" ]]; then
+        if ! command -v apt-get &>/dev/null; then
+            echo -e "${RED}Error: apt-get not found. Is this a valid Debian/Ubuntu system?${NC}"
+            exit 1
+        fi
+    else
+        if ! command -v dnf &>/dev/null && ! command -v yum &>/dev/null; then
+            echo -e "${RED}Error: Neither dnf nor yum found. Is this a valid RHEL-based system?${NC}"
+            exit 1
+        fi
+    fi
+
+    # Check for systemctl (systemd)
+    if ! command -v systemctl &>/dev/null; then
+        echo -e "${RED}Error: systemctl not found. This script requires systemd.${NC}"
+        echo -e "${YELLOW}Note: Oracle Linux 6 and earlier are not supported.${NC}"
+        exit 1
+    fi
+
     # Check system resources
     local mem_total=$(free -m | grep ^Mem | awk '{print $2}')
     local disk_free=$(df / | tail -1 | awk '{print $4}')
-    
-    echo -e "${GREEN}✓${NC} Ubuntu/Debian system detected"
+
+    echo -e "${GREEN}✓${NC} ${OS_NAME} system detected"
+    echo -e "${GREEN}✓${NC} Package manager available"
+    echo -e "${GREEN}✓${NC} systemd/systemctl available"
     echo -e "${GREEN}✓${NC} CPUs: $(nproc) cores"
     echo -e "${GREEN}✓${NC} Memory: ${mem_total}MB total"
     echo -e "${GREEN}✓${NC} Disk: ${disk_free}KB free"
-    
+
     # Warn if low resources
     if [[ $mem_total -lt 500 ]]; then
         echo -e "${YELLOW}⚠ Warning: Low memory detected. Recommend using lower CPU/memory percentages.${NC}"
     fi
-    
-    log "System check passed: Ubuntu/Debian, ${CPU_COUNT} CPUs, ${mem_total}MB RAM"
+
+    log "System check passed: ${OS_NAME}, ${CPU_COUNT} CPUs, ${mem_total}MB RAM"
+}
+
+# Check if a package is installed (OS-agnostic)
+is_package_installed() {
+    local pkg="$1"
+    if [[ "$OS_TYPE" == "debian" ]]; then
+        dpkg -l | grep -q "^ii.*$pkg"
+    else
+        rpm -q "$pkg" > /dev/null 2>&1
+    fi
+}
+
+# Install a package (OS-agnostic)
+install_package() {
+    local pkg="$1"
+    if [[ "$OS_TYPE" == "debian" ]]; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" > /dev/null 2>&1
+    else
+        dnf install -y "$pkg" > /dev/null 2>&1 || yum install -y "$pkg" > /dev/null 2>&1
+    fi
+}
+
+# Update package lists (OS-agnostic)
+update_package_lists() {
+    if [[ "$OS_TYPE" == "debian" ]]; then
+        apt-get update 2>&1 | grep -E "^(Get:|Hit:|Ign:)" > /dev/null
+    else
+        # For RHEL/Oracle Linux, dnf/yum automatically refreshes metadata
+        dnf makecache > /dev/null 2>&1 || yum makecache > /dev/null 2>&1
+    fi
 }
 
 # Comprehensive dependency installation with retry
 install_dependencies() {
     echo -e "\nChecking and installing dependencies...\n"
-    
+
     local packages_to_install=()
     local all_installed=true
-    
+
+    # Package names differ between Debian and RHEL-based systems
+    local stress_pkg="stress-ng"
+    local supervisor_pkg="supervisor"
+    local bc_pkg="bc"
+    local curl_pkg="curl"
+    local nettools_pkg="net-tools"
+
+    # On RHEL/Oracle Linux, packages like stress-ng and supervisor need EPEL
+    if [[ "$OS_TYPE" == "rhel" ]]; then
+        echo -e "  ${CYAN}Configuring EPEL repository for additional packages...${NC}"
+
+        # Detect OS version
+        local os_version=""
+        if [[ -f /etc/os-release ]]; then
+            os_version=$(grep "^VERSION_ID=" /etc/os-release | cut -d'"' -f2 | cut -d'.' -f1)
+        fi
+
+        if [[ -f /etc/oracle-release ]]; then
+            # Oracle Linux - use Oracle's EPEL repos
+            echo -e "  ${CYAN}Detected Oracle Linux ${os_version}, enabling Oracle EPEL...${NC}"
+
+            # Install yum-utils if not present (needed for yum-config-manager)
+            if ! command -v yum-config-manager &>/dev/null; then
+                dnf install -y yum-utils > /dev/null 2>&1 || yum install -y yum-utils > /dev/null 2>&1 || true
+            fi
+
+            # Try to install Oracle EPEL release package
+            if [[ "$os_version" == "9" ]]; then
+                dnf install -y oracle-epel-release-el9 > /dev/null 2>&1 || true
+                dnf config-manager --enable ol9_developer_EPEL > /dev/null 2>&1 || \
+                yum-config-manager --enable ol9_developer_EPEL > /dev/null 2>&1 || true
+            elif [[ "$os_version" == "8" ]]; then
+                dnf install -y oracle-epel-release-el8 > /dev/null 2>&1 || true
+                dnf config-manager --enable ol8_developer_EPEL > /dev/null 2>&1 || \
+                yum-config-manager --enable ol8_developer_EPEL > /dev/null 2>&1 || true
+            else
+                # OL7 or unknown - try generic approach
+                yum install -y oracle-release-el7 > /dev/null 2>&1 || true
+                yum-config-manager --enable ol7_developer_EPEL > /dev/null 2>&1 || true
+            fi
+
+            # Fallback to Fedora EPEL if Oracle EPEL failed
+            if ! dnf repolist 2>/dev/null | grep -qi "epel\|EPEL"; then
+                echo -e "  ${YELLOW}Oracle EPEL not available, trying Fedora EPEL...${NC}"
+                dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${os_version}.noarch.rpm" > /dev/null 2>&1 || \
+                yum install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${os_version}.noarch.rpm" > /dev/null 2>&1 || true
+            fi
+        else
+            # Standard RHEL/CentOS - use Fedora EPEL
+            echo -e "  ${CYAN}Detected RHEL/CentOS ${os_version}, enabling Fedora EPEL...${NC}"
+            dnf install -y epel-release > /dev/null 2>&1 || \
+            yum install -y epel-release > /dev/null 2>&1 || \
+            dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${os_version}.noarch.rpm" > /dev/null 2>&1 || \
+            yum install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${os_version}.noarch.rpm" > /dev/null 2>&1 || true
+        fi
+
+        echo -e "  ${GREEN}✓${NC} EPEL repository configured"
+    fi
+
     # Check each required package
-    for pkg in stress-ng supervisor bc curl net-tools; do
-        if ! dpkg -l | grep -q "^ii.*$pkg"; then
+    for pkg in "$stress_pkg" "$supervisor_pkg" "$bc_pkg" "$curl_pkg" "$nettools_pkg"; do
+        if ! is_package_installed "$pkg"; then
             echo -e "  ${YELLOW}◦${NC} $pkg - needs installation"
             packages_to_install+=("$pkg")
             all_installed=false
@@ -126,18 +271,18 @@ install_dependencies() {
             echo -e "  ${GREEN}✓${NC} $pkg - installed"
         fi
     done
-    
+
     if [[ "$all_installed" == "true" ]]; then
         echo -e "\n${GREEN}✓${NC} All dependencies are already installed"
     else
         echo -e "\n${CYAN}Installing missing packages...${NC}"
-        
+
         # Update package lists with retry
         local retry_count=0
         local max_retries=3
-        
+
         while [[ $retry_count -lt $max_retries ]]; do
-            if apt-get update 2>&1 | grep -E "^(Get:|Hit:|Ign:)" > /dev/null; then
+            if update_package_lists; then
                 echo -e "${GREEN}✓${NC} Package lists updated"
                 break
             else
@@ -151,14 +296,14 @@ install_dependencies() {
                 fi
             fi
         done
-        
+
         # Install packages
         for pkg in "${packages_to_install[@]}"; do
             echo -e "Installing $pkg..."
             retry_count=0
-            
+
             while [[ $retry_count -lt $max_retries ]]; do
-                if DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" > /dev/null 2>&1; then
+                if install_package "$pkg"; then
                     echo -e "  ${GREEN}✓${NC} $pkg installed successfully"
                     break
                 else
@@ -177,38 +322,40 @@ install_dependencies() {
             done
         done
     fi
-    
+
     # Ensure supervisor is running and enabled
     echo -e "\n${CYAN}Configuring supervisor service...${NC}"
-    
+
     # Enable supervisor to start on boot
-    if systemctl enable supervisor > /dev/null 2>&1; then
+    if systemctl enable "$SUPERVISOR_SERVICE" > /dev/null 2>&1; then
         echo -e "  ${GREEN}✓${NC} Supervisor enabled for auto-start"
     fi
-    
+
     # Start supervisor if not running
     if ! pgrep -x "supervisord" > /dev/null; then
-        if systemctl start supervisor > /dev/null 2>&1; then
+        if systemctl start "$SUPERVISOR_SERVICE" > /dev/null 2>&1; then
             echo -e "  ${GREEN}✓${NC} Supervisor service started"
         else
             # Fallback: try to start supervisord directly
-            supervisord -c /etc/supervisor/supervisord.conf > /dev/null 2>&1 || true
+            local supervisor_main_conf="/etc/supervisor/supervisord.conf"
+            [[ "$OS_TYPE" == "rhel" ]] && supervisor_main_conf="/etc/supervisord.conf"
+            supervisord -c "$supervisor_main_conf" > /dev/null 2>&1 || true
             echo -e "  ${YELLOW}⚠${NC} Started supervisord directly"
         fi
     else
         echo -e "  ${GREEN}✓${NC} Supervisor already running"
     fi
-    
+
     # Verify supervisor is responding
     if supervisorctl version > /dev/null 2>&1; then
         echo -e "  ${GREEN}✓${NC} Supervisor is responding"
     else
         echo -e "  ${RED}✗${NC} Supervisor not responding properly"
         echo -e "  ${YELLOW}Attempting to restart...${NC}"
-        systemctl restart supervisor > /dev/null 2>&1 || true
+        systemctl restart "$SUPERVISOR_SERVICE" > /dev/null 2>&1 || true
         sleep 2
     fi
-    
+
     log "Dependencies check/install completed"
 }
 
@@ -747,7 +894,7 @@ health_check() {
     if ! pgrep -x "supervisord" > /dev/null; then
         echo -e "${RED}✗${NC} Supervisor not running"
         echo -e "  ${YELLOW}→ Attempting to start...${NC}"
-        systemctl start supervisor > /dev/null 2>&1 || true
+        systemctl start "$SUPERVISOR_SERVICE" > /dev/null 2>&1 || true
         ((issues++))
     else
         echo -e "${GREEN}✓${NC} Supervisor running"
