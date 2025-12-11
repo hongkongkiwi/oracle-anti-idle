@@ -621,9 +621,11 @@ show_status() {
     
     # Check individual processes
     echo -e "\n${WHITE}Stress Processes:${NC}"
-    
-    local cpu_count=$(pgrep -fc "stress-ng.*cpu" 2>/dev/null || echo "0")
-    local mem_count=$(pgrep -fc "stress-ng.*vm" 2>/dev/null || echo "0")
+
+    local cpu_count
+    local mem_count
+    cpu_count=$(pgrep -c -f "stress-ng.*cpu" 2>/dev/null) || cpu_count=0
+    mem_count=$(pgrep -c -f "stress-ng.*vm" 2>/dev/null) || mem_count=0
     
     if [[ $cpu_count -gt 0 ]]; then
         echo -e "  ${GREEN}✓${NC} CPU stress: $cpu_count processes running"
