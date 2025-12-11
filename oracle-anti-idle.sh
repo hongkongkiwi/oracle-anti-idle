@@ -178,16 +178,26 @@ is_package_installed() {
 # Install a package (OS-agnostic)
 install_package() {
     local pkg="$1"
+    local result=0
+    local error_output=""
+
     if [[ "$OS_TYPE" == "debian" ]]; then
-        DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" > /dev/null 2>&1
+        error_output=$(DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" 2>&1) || result=$?
     else
         # Try dnf first, fall back to yum
         if command -v dnf &>/dev/null; then
-            dnf install -y "$pkg" > /dev/null 2>&1
+            error_output=$(dnf install -y "$pkg" 2>&1) || result=$?
         else
-            yum install -y "$pkg" > /dev/null 2>&1
+            error_output=$(yum install -y "$pkg" 2>&1) || result=$?
         fi
     fi
+
+    if [[ $result -ne 0 ]]; then
+        # Log the error for debugging
+        log "Failed to install $pkg: $error_output"
+        return 1
+    fi
+    return 0
 }
 
 # Update package lists (OS-agnostic)
@@ -255,9 +265,9 @@ install_dependencies() {
                 yum-config-manager --enable ol7_developer_EPEL > /dev/null 2>&1 || true
             fi
 
-            # Fallback to Fedora EPEL if Oracle EPEL failed
-            if ! dnf repolist 2>/dev/null | grep -qi "epel\|EPEL"; then
-                echo -e "  ${YELLOW}Oracle EPEL not available, trying Fedora EPEL...${NC}"
+            # Verify EPEL is enabled by checking if stress-ng is available
+            if ! dnf list available stress-ng > /dev/null 2>&1; then
+                echo -e "  ${YELLOW}Oracle EPEL packages not available, trying Fedora EPEL...${NC}"
                 dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${os_version}.noarch.rpm" > /dev/null 2>&1 || \
                 yum install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${os_version}.noarch.rpm" > /dev/null 2>&1 || true
             fi
@@ -311,22 +321,28 @@ install_dependencies() {
 
         # Install packages
         for pkg in "${packages_to_install[@]}"; do
-            echo -e "Installing $pkg..."
+            echo -ne "Installing $pkg... "
             retry_count=0
 
             while [[ $retry_count -lt $max_retries ]]; do
                 if install_package "$pkg"; then
-                    echo -e "  ${GREEN}✓${NC} $pkg installed successfully"
+                    echo -e "${GREEN}✓${NC}"
                     break
                 else
                     retry_count=$((retry_count + 1))
                     if [[ $retry_count -lt $max_retries ]]; then
-                        echo -e "  ${YELLOW}Retry $retry_count/$max_retries for $pkg...${NC}"
+                        echo -e "${YELLOW}retrying ($retry_count/$max_retries)${NC}"
+                        echo -ne "Installing $pkg... "
                         sleep 2
                     else
-                        echo -e "  ${RED}✗${NC} Failed to install $pkg"
+                        echo -e "${RED}✗ failed${NC}"
                         if [[ "$pkg" == "stress-ng" ]] || [[ "$pkg" == "supervisor" ]]; then
-                            echo -e "${RED}Critical package $pkg failed to install. Exiting.${NC}"
+                            echo -e "${RED}Critical package $pkg failed to install.${NC}"
+                            if [[ "$OS_TYPE" == "rhel" ]]; then
+                                echo -e "${YELLOW}Hint: Check if EPEL repository is properly configured.${NC}"
+                                echo -e "${YELLOW}Try manually: sudo dnf install epel-release && sudo dnf install $pkg${NC}"
+                            fi
+                            echo -e "${YELLOW}Check $LOG_FILE for details.${NC}"
                             exit 1
                         fi
                     fi
