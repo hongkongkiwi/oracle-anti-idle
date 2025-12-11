@@ -233,8 +233,9 @@ install_dependencies() {
 
     # On RHEL/Oracle Linux, packages like stress-ng and supervisor need EPEL
     if [[ "$OS_TYPE" == "rhel" ]]; then
-        # Check if EPEL is already configured (epel-release or oracle-epel-release installed)
-        if rpm -q epel-release > /dev/null 2>&1 || rpm -q oracle-epel-release-el9 > /dev/null 2>&1 || rpm -q oracle-epel-release-el8 > /dev/null 2>&1; then
+        # Check if EPEL packages are already installed (stress-ng comes from EPEL)
+        # If stress-ng is installed, EPEL was already configured successfully
+        if rpm -q stress-ng > /dev/null 2>&1; then
             echo -e "  ${GREEN}✓${NC} EPEL repository already configured"
         else
             # Detect OS version
