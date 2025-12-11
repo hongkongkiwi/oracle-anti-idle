@@ -267,19 +267,20 @@ install_dependencies() {
             fi
 
             if [[ -f /etc/oracle-release ]]; then
-                # Oracle Linux - use Oracle's EPEL repos
-                echo -ne "  Configuring Oracle Linux ${os_version} EPEL repository... "
+                # Oracle Linux - need both Oracle EPEL (for some packages) AND Fedora EPEL (for supervisor)
+                echo -ne "  Configuring Oracle Linux ${os_version} EPEL repositories... "
 
-                # Try to install Oracle EPEL release package, fallback to Fedora EPEL
+                # Install Oracle EPEL for base packages
                 if [[ "$os_version" == "9" ]]; then
-                    dnf install -y oracle-epel-release-el9 > /dev/null 2>&1 || \
+                    dnf install -y oracle-epel-release-el9 > /dev/null 2>&1 || true
+                    # Also install Fedora EPEL - supervisor is only in Fedora EPEL, not Oracle EPEL
                     dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm" > /dev/null 2>&1 || true
                 elif [[ "$os_version" == "8" ]]; then
-                    dnf install -y oracle-epel-release-el8 > /dev/null 2>&1 || \
+                    dnf install -y oracle-epel-release-el8 > /dev/null 2>&1 || true
                     dnf install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm" > /dev/null 2>&1 || true
                 else
                     # OL7 or unknown
-                    yum install -y oracle-release-el7 > /dev/null 2>&1 || \
+                    yum install -y oracle-release-el7 > /dev/null 2>&1 || true
                     yum install -y "https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm" > /dev/null 2>&1 || true
                 fi
                 echo -e "${GREEN}done${NC}"
