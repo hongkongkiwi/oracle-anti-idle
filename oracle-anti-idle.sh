@@ -38,7 +38,6 @@ CPU_COUNT=$(nproc)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 GRAY='\033[0;90m'
@@ -145,7 +144,7 @@ check_system() {
     # Check if supported OS
     if [[ "$OS_TYPE" == "unknown" ]]; then
         echo -e "${RED}Error: This script is designed for Ubuntu/Debian or Oracle Linux/RHEL systems${NC}"
-        echo -e "${YELLOW}Detected: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || echo 'Unknown OS')${NC}"
+        echo -e "${YELLOW}Detected: $(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo 'Unknown OS')${NC}"
         exit 1
     fi
 
@@ -192,7 +191,7 @@ check_system() {
 is_package_installed() {
     local pkg="$1"
     if [[ "$OS_TYPE" == "debian" ]]; then
-        dpkg -l | grep -q "^ii.*$pkg"
+        dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"
     else
         rpm -q "$pkg" > /dev/null 2>&1
     fi
@@ -865,8 +864,7 @@ check_for_updates() {
         if version_compare "$latest_version" "$SCRIPT_VERSION"; then
             # latest_version > SCRIPT_VERSION (return code 0)
             echo -e "\n${GREEN}✓ Update available!${NC}"
-            echo -e "Would you like to update? (y/n): "
-            read -p "" update_confirm
+            read -p "Would you like to update? (y/n): " update_confirm
 
             if [[ "$update_confirm" =~ ^[Yy]$ ]]; then
                 perform_update "$temp_file" "$latest_version"
