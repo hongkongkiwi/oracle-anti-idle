@@ -923,7 +923,7 @@ health_check() {
         echo -e "${RED}✗${NC} Supervisor not running"
         echo -e "  ${YELLOW}→ Attempting to start...${NC}"
         systemctl start "$SUPERVISOR_SERVICE" > /dev/null 2>&1 || true
-        ((issues++))
+        ((issues++)) || true
     else
         echo -e "${GREEN}✓${NC} Supervisor running"
     fi
@@ -932,7 +932,7 @@ health_check() {
     if [[ ! -f "$SUPERVISOR_CONF" ]]; then
         echo -e "${RED}✗${NC} Configuration missing"
         echo -e "  ${YELLOW}→ Run 'Quick Setup' to create${NC}"
-        ((issues++))
+        ((issues++)) || true
     else
         echo -e "${GREEN}✓${NC} Configuration exists"
     fi
@@ -944,7 +944,7 @@ health_check() {
         if ! pgrep -f "stress-ng" > /dev/null; then
             echo -e "${YELLOW}⚠${NC} Anti-idle enabled but processes not running"
             echo -e "  ${YELLOW}→ Try toggling the system off and on${NC}"
-            ((issues++))
+            ((issues++)) || true
         else
             echo -e "${GREEN}✓${NC} Stress processes running"
         fi
@@ -956,7 +956,7 @@ health_check() {
     if [[ ! -d "$LOG_DIR" ]]; then
         echo -e "${YELLOW}⚠${NC} Log directory missing"
         mkdir -p "$LOG_DIR" 2>/dev/null || true
-        ((issues++))
+        ((issues++)) || true
     else
         echo -e "${GREEN}✓${NC} Log directory exists"
     fi
