@@ -50,6 +50,29 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE" 2>/dev/null || true
 }
 
+# Compare semantic versions: returns 0 if v1 > v2, 1 if v1 = v2, 2 if v1 < v2
+version_compare() {
+    local v1="$1" v2="$2"
+    # Remove leading 'v' if present
+    v1="${v1#v}"
+    v2="${v2#v}"
+
+    local IFS='.'
+    local i v1_parts=($v1) v2_parts=($v2)
+
+    # Compare each part
+    for ((i=0; i<${#v1_parts[@]} || i<${#v2_parts[@]}; i++)); do
+        local n1=${v1_parts[i]:-0}
+        local n2=${v2_parts[i]:-0}
+        if ((n1 > n2)); then
+            return 0  # v1 > v2
+        elif ((n1 < n2)); then
+            return 2  # v1 < v2
+        fi
+    done
+    return 1  # v1 = v2
+}
+
 # Error handler
 handle_error() {
     local line_number=$1
@@ -785,13 +808,14 @@ check_for_updates() {
         
         echo -e "Current version: ${WHITE}v${SCRIPT_VERSION}${NC}"
         echo -e "Latest version:  ${WHITE}v${latest_version}${NC}"
-        
-        # Compare versions
-        if [[ "$latest_version" != "$SCRIPT_VERSION" ]]; then
+
+        # Compare versions - only update if remote version is newer
+        if version_compare "$latest_version" "$SCRIPT_VERSION"; then
+            # latest_version > SCRIPT_VERSION (return code 0)
             echo -e "\n${GREEN}✓ Update available!${NC}"
             echo -e "Would you like to update? (y/n): "
             read -p "" update_confirm
-            
+
             if [[ "$update_confirm" =~ ^[Yy]$ ]]; then
                 perform_update "$temp_file" "$latest_version"
             else
@@ -892,7 +916,8 @@ auto_update_check() {
         if curl -s -f -L "$UPDATE_URL" -o "$temp_file" 2>/dev/null; then
             local latest_version=$(grep "^SCRIPT_VERSION=" "$temp_file" | cut -d'"' -f2)
             
-            if [[ -n "$latest_version" ]] && [[ "$latest_version" != "$SCRIPT_VERSION" ]]; then
+            # Only show update notice if remote version is actually newer
+            if [[ -n "$latest_version" ]] && version_compare "$latest_version" "$SCRIPT_VERSION"; then
                 echo -e "\n${YELLOW}╔══════════════════════════════════════════╗${NC}"
                 echo -e "${YELLOW}║  📦 Update Available: v${latest_version}          ║${NC}"
                 echo -e "${YELLOW}║  Run option 6 to update                  ║${NC}"
